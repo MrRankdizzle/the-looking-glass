@@ -3,6 +3,10 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="theme-color" content="#14110d" />
 <title>The Looking Glass</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -157,6 +161,19 @@
   #gear:hover { background: rgba(30,25,18,0.8); }
   #gear svg { width: 22px; height: 22px; }
 
+  #fsToggle {
+    position: fixed; top: 16px; right: 70px; z-index: 40;
+    width: 46px; height: 46px; border-radius: 50%;
+    display: grid; place-items: center; cursor: pointer;
+    background: rgba(20,17,13,0.55); border: 1px solid var(--line);
+    color: var(--brass); opacity: 0;
+    transition: opacity 0.4s ease, background 0.2s ease;
+    -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+  }
+  #fsToggle.show { opacity: 1; }
+  #fsToggle:hover { background: rgba(30,25,18,0.8); }
+  #fsToggle svg { width: 22px; height: 22px; }
+
   #settings {
     position: fixed; top: 0; right: 0; bottom: 0; z-index: 50;
     width: min(440px, 100%);
@@ -297,6 +314,10 @@
     <p id="statusMsg">A quiet frame for the photos you love. Open settings to point it at an album.</p>
     <div class="cta"><button class="btn primary" style="width:auto;padding:13px 28px" id="statusOpen">Set up the frame</button></div>
   </div>
+</div>
+
+<div id="fsToggle" title="Full screen" aria-label="Toggle full screen">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V5a1 1 0 0 1 1-1h4M20 9V5a1 1 0 0 0-1-1h-4M4 15v4a1 1 0 0 0 1 1h4M20 15v4a1 1 0 0 0-1 1h-4"/></svg>
 </div>
 
 <div id="gear" title="Settings" aria-label="Open settings">
@@ -1041,13 +1062,49 @@
   var gearTimer;
   function flashChrome() {
     $("gear").classList.add("show");
+    $("fsToggle").classList.add("show");
     clearTimeout(gearTimer);
     gearTimer = setTimeout(function () {
-      if (!$("settings").classList.contains("open")) $("gear").classList.remove("show");
+      if (!$("settings").classList.contains("open")) {
+        $("gear").classList.remove("show");
+        $("fsToggle").classList.remove("show");
+      }
     }, 3500);
   }
   document.addEventListener("mousemove", flashChrome);
   document.addEventListener("touchstart", flashChrome, { passive: true });
+
+  // Keep the screen awake, and offer full screen. The Portal browser may honor
+  // some, all, or none of this depending on its age, so every call is guarded
+  // and silently does nothing if unsupported.
+  var wakeLock = null;
+  function requestWake() {
+    try {
+      if (navigator.wakeLock && navigator.wakeLock.request) {
+        navigator.wakeLock.request("screen").then(function (wl) {
+          wakeLock = wl;
+          wl.addEventListener("release", function () { wakeLock = null; });
+        }).catch(function () {});
+      }
+    } catch (e) {}
+  }
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "visible") requestWake();
+  });
+  function fsActive() { return document.fullscreenElement || document.webkitFullscreenElement || null; }
+  function enterFullscreen() {
+    var el = document.documentElement;
+    var fn = el.requestFullscreen || el.webkitRequestFullscreen || el.webkitRequestFullScreen || el.mozRequestFullScreen;
+    if (fn) { try { fn.call(el); } catch (e) {} }
+    requestWake();
+  }
+  function toggleFullscreen() {
+    if (fsActive()) {
+      var ex = document.exitFullscreen || document.webkitExitFullscreen;
+      if (ex) { try { ex.call(document); } catch (e) {} }
+    } else { enterFullscreen(); }
+  }
+  $("fsToggle").addEventListener("click", toggleFullscreen);
 
   function openSettings() { fillForm(); $("settings").classList.add("open"); $("gear").classList.add("show"); stop(); }
   function closeSettings() { $("settings").classList.remove("open"); }
@@ -1176,12 +1233,14 @@
     else if (e.key === "ArrowRight") { advance(); }
     else if (e.key === "ArrowLeft") { pos = (pos - 1 + order.length) % order.length; showNext(false); }
     else if (e.key.toLowerCase() === "s") { openSettings(); }
+    else if (e.key.toLowerCase() === "f") { toggleFullscreen(); }
   });
 
   // ---- boot ----
   var hasSource = (config.source === "urls" && config.urls.length) ||
                   (config.source === "icloud" && config.proxy && config.album);
   applyCssVars();
+  requestWake();
   fillForm();
   if (hasSource) { run(); }
   else {
