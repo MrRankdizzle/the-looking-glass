@@ -6,13 +6,20 @@
 <title>The Looking Glass</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<!-- Fonts. Each family gets its own tag so one failing to load never breaks the others. -->
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@300;400;500;700&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;600&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@300;400;600;700&display=swap" rel="stylesheet" />
 <style>
   :root {
-    --ink: #14110d;         /* warm near-black, so photos sit on something soft */
+    --ink: #14110d;
     --panel: rgba(24, 20, 15, 0.86);
     --line: rgba(198, 161, 91, 0.22);
-    --brass: #c6a15b;       /* the one accent: gilded picture-frame warmth */
+    --brass: #c6a15b;
     --brass-dim: rgba(198, 161, 91, 0.55);
     --cream: #f2ece1;
     --muted: rgba(242, 236, 225, 0.55);
@@ -20,6 +27,8 @@
     --speed: 1.5s;
     --blur: 40px;
     --dim: 0.35;
+    --display-font: 'Fraunces';
+    --clock-scale: 1;
   }
 
   * { box-sizing: border-box; }
@@ -31,9 +40,8 @@
     -webkit-tap-highlight-color: transparent;
   }
 
-  /* ---------- The stage: where photos live ---------- */
+  /* ---------- The stage ---------- */
   #stage { position: fixed; inset: 0; background: #000; }
-
   .slot {
     position: absolute; inset: 0;
     opacity: 0;
@@ -41,9 +49,6 @@
     will-change: opacity, transform;
   }
   .slot.active { opacity: 1; }
-
-  /* Blurred bleed: the same photo, cropped to fill, blurred and dimmed,
-     so a landscape frame never shows dead black bars around a portrait. */
   .slot .bg {
     position: absolute; inset: 0;
     width: 100%; height: 100%;
@@ -51,76 +56,85 @@
     transform: scale(1.12);
     filter: blur(var(--blur)) brightness(calc(1 - var(--dim)));
   }
-  /* The real photo, whole and uncropped, floating on the blur. */
   .slot .fg {
     position: absolute; inset: 0;
     width: 100%; height: 100%;
     object-fit: contain;
     will-change: transform;
   }
-  /* Fill mode: crop to the frame instead of respecting aspect ratio. */
   #stage.fill .slot .fg { object-fit: cover; }
   #stage.fill .slot .bg { display: none; }
+  #stage.solidbg .slot .bg { display: none; }
 
-  /* Ken Burns drift, applied per-slide */
   @keyframes drift {
     from { transform: scale(1.0) translate(0, 0); }
     to   { transform: scale(1.09) translate(var(--kbx, -1.5%), var(--kby, -1.5%)); }
   }
   .slot.kb .fg { animation: drift var(--interval) ease-out both; }
 
+  /* ---------- Night dimming ---------- */
+  #night {
+    position: fixed; inset: 0; z-index: 20;
+    background: #000; opacity: 0; pointer-events: none;
+    transition: opacity 2.5s ease;
+  }
+
   /* ---------- Overlay: clock, date, caption ---------- */
   #overlay {
-    position: fixed; left: 0; right: 0; bottom: 0;
-    padding: clamp(20px, 4vh, 48px) clamp(24px, 5vw, 64px);
-    background: linear-gradient(to top, rgba(0,0,0,0.5), rgba(0,0,0,0));
-    pointer-events: none;
-    display: flex; align-items: flex-end; justify-content: space-between;
-    gap: 24px;
-    transition: opacity 0.6s ease;
+    position: fixed; inset: 0; z-index: 5;
+    padding: clamp(20px, 4.5vh, 52px) clamp(24px, 5vw, 64px);
+    display: flex; flex-direction: column; gap: 4px;
+    pointer-events: none; transition: opacity 0.6s ease;
   }
   #overlay.hidden { opacity: 0; }
+  #overlay.pos-bl, #overlay.pos-bc, #overlay.pos-br { justify-content: flex-end; }
+  #overlay.pos-tl, #overlay.pos-tc, #overlay.pos-tr { justify-content: flex-start; }
+  #overlay.pos-cc { justify-content: center; }
+  #overlay.pos-bl, #overlay.pos-tl { align-items: flex-start; text-align: left; }
+  #overlay.pos-br, #overlay.pos-tr { align-items: flex-end; text-align: right; }
+  #overlay.pos-bc, #overlay.pos-tc, #overlay.pos-cc { align-items: center; text-align: center; }
+  #overlay.pos-bl, #overlay.pos-bc, #overlay.pos-br { background: linear-gradient(to top, rgba(0,0,0,0.5), rgba(0,0,0,0) 42%); }
+  #overlay.pos-tl, #overlay.pos-tc, #overlay.pos-tr { background: linear-gradient(to bottom, rgba(0,0,0,0.5), rgba(0,0,0,0) 42%); }
+  #overlay.pos-cc { background: radial-gradient(65% 55% at 50% 50%, rgba(0,0,0,0.42), rgba(0,0,0,0)); }
+
   #clock {
-    font-family: "Fraunces", Georgia, serif;
+    font-family: var(--display-font), system-ui, sans-serif;
     font-weight: 300;
-    font-size: clamp(40px, 8vw, 92px);
-    line-height: 0.9;
+    font-size: calc(clamp(40px, 8vw, 92px) * var(--clock-scale));
+    line-height: 0.95;
     letter-spacing: -0.01em;
     text-shadow: 0 2px 24px rgba(0,0,0,0.55);
   }
-  #datecap { text-align: right; max-width: 55%; }
   #date {
+    font-family: "Inter", system-ui, sans-serif;
     font-size: clamp(13px, 1.6vw, 18px);
     letter-spacing: 0.14em; text-transform: uppercase;
-    color: var(--brass);
+    color: var(--brass); margin-top: 8px;
     text-shadow: 0 1px 12px rgba(0,0,0,0.6);
   }
   #caption {
-    margin-top: 6px;
-    font-family: "Fraunces", Georgia, serif;
+    font-family: var(--display-font), system-ui, sans-serif;
     font-size: clamp(15px, 2vw, 24px);
-    color: rgba(242,236,225,0.9);
+    color: rgba(242,236,225,0.9); margin-top: 2px;
     text-shadow: 0 1px 16px rgba(0,0,0,0.6);
   }
 
-  /* ---------- Setup / status states ---------- */
+  /* ---------- Setup / status ---------- */
   #status {
     position: fixed; inset: 0; z-index: 30;
-    display: none; place-items: center; text-align: center;
-    padding: 32px;
+    display: none; place-items: center; text-align: center; padding: 32px;
     background: radial-gradient(120% 120% at 50% 30%, #1c1811 0%, #100d09 70%);
   }
   #status.show { display: grid; }
   #status .mark {
-    font-family: "Fraunces", Georgia, serif; font-weight: 300;
-    font-size: clamp(34px, 7vw, 56px); letter-spacing: 0.02em;
-    color: var(--cream);
+    font-family: var(--display-font), Georgia, serif; font-weight: 300;
+    font-size: clamp(34px, 7vw, 56px); letter-spacing: 0.02em; color: var(--cream);
   }
   #status .mark b { color: var(--brass); font-weight: 400; }
   #status p { color: var(--muted); max-width: 42ch; margin: 14px auto 0; line-height: 1.55; }
   #status .cta { margin-top: 26px; }
 
-  /* ---------- Tap target + gear ---------- */
+  /* ---------- Gear ---------- */
   #gear {
     position: fixed; top: 16px; right: 16px; z-index: 40;
     width: 46px; height: 46px; border-radius: 50%;
@@ -134,7 +148,7 @@
   #gear:hover { background: rgba(30,25,18,0.8); }
   #gear svg { width: 22px; height: 22px; }
 
-  /* ---------- Settings panel ---------- */
+  /* ---------- Settings ---------- */
   #settings {
     position: fixed; top: 0; right: 0; bottom: 0; z-index: 50;
     width: min(440px, 100%);
@@ -151,8 +165,8 @@
     padding: 26px 28px 6px;
   }
   .panel-head h1 {
-    font-family: "Fraunces", Georgia, serif; font-weight: 400;
-    font-size: 30px; margin: 0; letter-spacing: 0.01em;
+    font-family: var(--display-font), Georgia, serif; font-weight: 400;
+    font-size: 28px; margin: 0; letter-spacing: 0.01em;
   }
   .panel-head h1 span { color: var(--brass); }
   .panel-head .close {
@@ -170,8 +184,11 @@
   .field:last-child { margin-bottom: 0; }
   .field label { display: block; font-size: 13px; color: var(--cream); margin-bottom: 7px; }
   .field .hint { font-size: 12px; color: var(--muted); margin-top: 6px; line-height: 1.45; }
+  .row2 { display: flex; gap: 10px; }
+  .row2 > * { flex: 1; }
 
-  input[type="text"], input[type="url"], input[type="number"], select, textarea {
+  input[type="text"], input[type="url"], input[type="number"], input[type="time"],
+  select, textarea {
     width: 100%; padding: 11px 13px;
     background: rgba(0,0,0,0.28); color: var(--cream);
     border: 1px solid var(--line); border-radius: 10px;
@@ -188,8 +205,11 @@
     background-position: calc(100% - 18px) 55%, calc(100% - 13px) 55%;
     background-size: 5px 5px, 5px 5px; background-repeat: no-repeat;
   }
+  input[type="color"] {
+    width: 100%; height: 44px; padding: 4px; cursor: pointer;
+    background: rgba(0,0,0,0.28); border: 1px solid var(--line); border-radius: 10px;
+  }
 
-  /* segmented control */
   .seg { display: flex; gap: 4px; background: rgba(0,0,0,0.28);
     border: 1px solid var(--line); border-radius: 10px; padding: 4px; }
   .seg button {
@@ -199,7 +219,6 @@
   }
   .seg button.on { background: var(--brass); color: #1a1408; font-weight: 600; }
 
-  /* toggle */
   .toggle-row { display: flex; align-items: center; justify-content: space-between; }
   .toggle-row label { margin: 0; }
   .switch { position: relative; width: 46px; height: 27px; flex: none; cursor: pointer; }
@@ -215,7 +234,6 @@
   .switch input:checked + .track { background: var(--brass); }
   .switch input:checked + .track + .knob { transform: translateX(19px); }
 
-  /* range */
   input[type="range"] { width: 100%; accent-color: var(--brass); }
   .range-val { font-size: 12px; color: var(--brass); float: right; }
 
@@ -244,7 +262,7 @@
   #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
   @media (prefers-reduced-motion: reduce) {
-    .slot, #overlay, #settings, #toast { transition-duration: 0.01ms !important; }
+    .slot, #overlay, #settings, #toast, #night { transition-duration: 0.01ms !important; }
     .slot.kb .fg { animation: none !important; }
   }
 </style>
@@ -256,12 +274,12 @@
   <div class="slot" id="slotB"><img class="bg" alt="" /><img class="fg" alt="" /></div>
 </div>
 
-<div id="overlay">
+<div id="night"></div>
+
+<div id="overlay" class="pos-bl">
   <div id="clock">--:--</div>
-  <div id="datecap">
-    <div id="date"></div>
-    <div id="caption"></div>
-  </div>
+  <div id="date"></div>
+  <div id="caption"></div>
 </div>
 
 <div id="status">
@@ -295,7 +313,6 @@
         <button data-src="urls">Image links</button>
       </div>
     </div>
-
     <div id="icloudFields">
       <div class="field">
         <label for="album">Shared album link</label>
@@ -305,42 +322,48 @@
       <div class="field">
         <label for="proxy">Proxy address</label>
         <input type="url" id="proxy" placeholder="https://your-project.vercel.app/api/icloud" />
-        <div class="hint">The little helper you deployed. Needed once because Apple blocks direct browser access.</div>
+        <div class="hint">Just the helper address &mdash; don't add <b>?token=</b> on the end. The frame adds that itself.</div>
       </div>
     </div>
-
     <div id="urlFields" class="hide">
       <div class="field">
         <label for="urls">Direct image links, one per line</label>
         <textarea id="urls" placeholder="https://example.com/beach.jpg&#10;https://example.com/hike.jpg"></textarea>
-        <div class="hint">Any publicly reachable .jpg / .png / .webp. Good for testing or a hand-picked set.</div>
+        <div class="hint">Any publicly reachable .jpg / .png / .webp.</div>
       </div>
     </div>
   </div>
 
-  <!-- TIMING & MOTION -->
+  <!-- PACE & MOTION -->
   <div class="group">
     <div class="glabel">Pace &amp; motion</div>
     <div class="field">
       <label>Change photo every <span class="range-val" id="intervalVal">8s</span></label>
       <input type="range" id="interval" min="3" max="60" step="1" value="8" />
     </div>
-    <div class="field">
-      <label for="transition">Transition</label>
-      <select id="transition">
-        <option value="kenburns">Ken Burns (slow drift)</option>
-        <option value="crossfade">Crossfade</option>
-        <option value="slide">Slide</option>
-        <option value="fadeblack">Fade through black</option>
-      </select>
+    <div class="row2">
+      <div class="field">
+        <label for="transition">Transition</label>
+        <select id="transition">
+          <option value="kenburns">Ken Burns</option>
+          <option value="crossfade">Crossfade</option>
+          <option value="slide">Slide</option>
+          <option value="fadeblack">Fade through black</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="order">Photo order</label>
+        <select id="order">
+          <option value="shuffle">Shuffle</option>
+          <option value="newest">Newest first</option>
+          <option value="oldest">Oldest first</option>
+          <option value="album">Album order</option>
+        </select>
+      </div>
     </div>
     <div class="field">
       <label>Transition length <span class="range-val" id="speedVal">1.5s</span></label>
       <input type="range" id="speed" min="0.3" max="4" step="0.1" value="1.5" />
-    </div>
-    <div class="field toggle-row">
-      <label for="shuffle">Shuffle order</label>
-      <span class="switch"><input type="checkbox" id="shuffle" checked /><span class="track"></span><span class="knob"></span></span>
     </div>
   </div>
 
@@ -350,10 +373,23 @@
     <div class="field">
       <label>How photos fit the screen</label>
       <div class="seg" id="fitSeg">
-        <button data-fit="fit" class="on">Whole photo + blur</button>
+        <button data-fit="fit" class="on">Whole photo</button>
         <button data-fit="fill">Fill &amp; crop</button>
       </div>
-      <div class="hint">Landscape frame, portrait photo? "Whole photo + blur" keeps every photo intact and fills the edges with a soft blurred version of itself.</div>
+      <div class="hint">"Whole photo" keeps every photo intact and fills the empty edges. Choose how those edges look below.</div>
+    </div>
+    <div id="bgField" class="field">
+      <label for="bgFill">Edges around the photo</label>
+      <select id="bgFill">
+        <option value="blur">Blurred photo</option>
+        <option value="black">Solid black</option>
+        <option value="white">Solid white</option>
+        <option value="color">Custom color</option>
+      </select>
+    </div>
+    <div id="bgColorField" class="field hide">
+      <label for="bgColor">Edge color</label>
+      <input type="color" id="bgColor" value="#101010" />
     </div>
     <div id="blurFields">
       <div class="field">
@@ -367,9 +403,38 @@
     </div>
   </div>
 
-  <!-- OVERLAY -->
+  <!-- LOOK: FONT & COLOR -->
   <div class="group">
-    <div class="glabel">On-screen text</div>
+    <div class="glabel">Type &amp; color</div>
+    <div class="field">
+      <label for="font">Clock &amp; caption font</label>
+      <select id="font">
+        <option value="Google Sans">Google Sans</option>
+        <option value="Fraunces">Fraunces (elegant serif)</option>
+        <option value="Inter">Inter</option>
+        <option value="Roboto">Roboto</option>
+        <option value="Poppins">Poppins</option>
+        <option value="Playfair Display">Playfair Display</option>
+        <option value="Montserrat">Montserrat</option>
+        <option value="Nunito">Nunito</option>
+        <option value="Custom">Custom&hellip;</option>
+      </select>
+    </div>
+    <div id="fontCustomField" class="field hide">
+      <label for="fontCustom">Google font name</label>
+      <input type="text" id="fontCustom" placeholder="e.g. Lora, Work Sans, DM Serif Display" />
+      <div class="hint">Type the exact name of any font from fonts.google.com and it will load.</div>
+    </div>
+    <div class="field">
+      <label for="accent">Accent color</label>
+      <input type="color" id="accent" value="#c6a15b" />
+      <div class="hint">Colors the date label, controls, and highlights.</div>
+    </div>
+  </div>
+
+  <!-- CLOCK & TEXT -->
+  <div class="group">
+    <div class="glabel">Clock &amp; text</div>
     <div class="field toggle-row">
       <label for="clockOn">Show clock</label>
       <span class="switch"><input type="checkbox" id="clockOn" checked /><span class="track"></span><span class="knob"></span></span>
@@ -381,6 +446,50 @@
     <div class="field toggle-row">
       <label for="dateOn">Show date &amp; caption</label>
       <span class="switch"><input type="checkbox" id="dateOn" /><span class="track"></span><span class="knob"></span></span>
+    </div>
+    <div class="row2">
+      <div class="field">
+        <label for="clockSize">Text size</label>
+        <select id="clockSize">
+          <option value="S">Small</option>
+          <option value="M" selected>Medium</option>
+          <option value="L">Large</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="textPos">Text position</label>
+        <select id="textPos">
+          <option value="bl">Bottom left</option>
+          <option value="bc">Bottom center</option>
+          <option value="br">Bottom right</option>
+          <option value="tl">Top left</option>
+          <option value="tr">Top right</option>
+          <option value="cc">Center</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- NIGHT -->
+  <div class="group">
+    <div class="glabel">Night dimming</div>
+    <div class="field toggle-row">
+      <label for="nightOn">Dim the screen at night</label>
+      <span class="switch"><input type="checkbox" id="nightOn" /><span class="track"></span><span class="knob"></span></span>
+    </div>
+    <div class="row2">
+      <div class="field">
+        <label for="nightStart">From</label>
+        <input type="time" id="nightStart" value="22:00" />
+      </div>
+      <div class="field">
+        <label for="nightEnd">Until</label>
+        <input type="time" id="nightEnd" value="07:00" />
+      </div>
+    </div>
+    <div class="field">
+      <label>How dark <span class="range-val" id="nightDimVal">60%</span></label>
+      <input type="range" id="nightDim" min="20" max="95" step="5" value="60" />
     </div>
   </div>
 
@@ -396,31 +505,32 @@
 (function () {
   "use strict";
 
-  // ---- tiny helpers ----
   var $ = function (id) { return document.getElementById(id); };
   var stage = $("stage");
   var slots = [$("slotA"), $("slotB")];
-  var active = 0;              // index into slots that is currently shown
-  var photos = [];            // { url, width, height, caption, date }
+  var active = 0;
+  var photos = [];
   var order = [];
   var pos = 0;
   var timer = null;
   var running = false;
 
-  // localStorage, guarded (blocked in some sandboxes; that's fine)
   var store = {
     get: function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
     set: function (k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
   };
 
+  var CURATED = ["Google Sans","Fraunces","Inter","Roboto","Poppins","Playfair Display","Montserrat","Nunito"];
+
   var DEFAULTS = {
     source: "icloud", album: "", proxy: "", urls: [],
-    interval: 8, transition: "kenburns", speed: 1.5, shuffle: true,
-    fit: "fit", blurAmount: 40, dim: 35,
-    clockOn: true, clock24: false, dateOn: false
+    interval: 8, transition: "kenburns", speed: 1.5, order: "shuffle",
+    fit: "fit", bgFill: "blur", bgColor: "#101010", blurAmount: 40, dim: 35,
+    font: "Fraunces", fontCustom: "", accent: "#c6a15b",
+    clockOn: true, clock24: false, dateOn: false, clockSize: "M", textPos: "bl",
+    nightOn: false, nightStart: "22:00", nightEnd: "07:00", nightDim: 60
   };
 
-  // ---- config load: URL hash wins, then localStorage, then defaults ----
   function loadConfig() {
     var cfg = null;
     if (location.hash.indexOf("cfg=") !== -1) {
@@ -432,6 +542,10 @@
     if (!cfg) {
       var saved = store.get("looking-glass-config");
       if (saved) { try { cfg = JSON.parse(saved); } catch (e) {} }
+    }
+    // Carry older saved configs forward: shuffle boolean -> order.
+    if (cfg && cfg.order === undefined && cfg.shuffle !== undefined) {
+      cfg.order = cfg.shuffle ? "shuffle" : "album";
     }
     return assign({}, DEFAULTS, cfg || {});
   }
@@ -451,35 +565,61 @@
 
   var config = loadConfig();
 
-  // ---- apply config to the CSS + form ----
+  function hexToRgba(hex, a) {
+    hex = (hex || "").replace("#", "");
+    if (hex.length === 3) hex = hex.split("").map(function (c) { return c + c; }).join("");
+    var n = parseInt(hex, 16);
+    if (isNaN(n)) return "rgba(198,161,91," + a + ")";
+    return "rgba(" + ((n >> 16) & 255) + "," + ((n >> 8) & 255) + "," + (n & 255) + "," + a + ")";
+  }
+
+  var loadedFonts = {};
+  function ensureFont(family) {
+    if (!family || loadedFonts[family]) return;
+    loadedFonts[family] = true;
+    var l = document.createElement("link");
+    l.rel = "stylesheet";
+    l.href = "https://fonts.googleapis.com/css2?family=" +
+             encodeURIComponent(family).replace(/%20/g, "+") + "&display=swap";
+    document.head.appendChild(l);
+  }
+
   function applyCssVars() {
     var r = document.documentElement.style;
     r.setProperty("--interval", config.interval + "s");
     r.setProperty("--speed", config.speed + "s");
     r.setProperty("--blur", config.blurAmount + "px");
     r.setProperty("--dim", (config.dim / 100).toString());
-    stage.className = config.fit === "fill" ? "fill" : "";
+
+    var a = config.accent || "#c6a15b";
+    r.setProperty("--brass", a);
+    r.setProperty("--brass-dim", hexToRgba(a, 0.55));
+    r.setProperty("--line", hexToRgba(a, 0.22));
+
+    r.setProperty("--clock-scale", config.clockSize === "S" ? "0.7" : config.clockSize === "L" ? "1.4" : "1");
+
+    var fam = config.font === "Custom" ? (config.fontCustom || "").trim() : config.font;
+    if (!fam) fam = "Fraunces";
+    if (config.font === "Custom") ensureFont(fam);
+    r.setProperty("--display-font", "'" + fam + "'");
+
+    // stage background / framing
+    stage.className = "";
+    stage.style.background = "";
+    if (config.fit === "fill") {
+      stage.classList.add("fill");
+    } else if (config.bgFill && config.bgFill !== "blur") {
+      stage.classList.add("solidbg");
+      stage.style.background = config.bgFill === "white" ? "#ffffff"
+        : config.bgFill === "color" ? (config.bgColor || "#101010") : "#000000";
+    }
+
+    // overlay position (preserve current hidden state)
+    var hidden = $("overlay").classList.contains("hidden");
+    $("overlay").className = "pos-" + (config.textPos || "bl") + (hidden ? " hidden" : "");
   }
 
-  function fillForm() {
-    $("album").value = config.album || "";
-    $("proxy").value = config.proxy || "";
-    $("urls").value = (config.urls || []).join("\n");
-    $("interval").value = config.interval; $("intervalVal").textContent = config.interval + "s";
-    $("transition").value = config.transition;
-    $("speed").value = config.speed; $("speedVal").textContent = config.speed + "s";
-    $("shuffle").checked = !!config.shuffle;
-    $("blurAmount").value = config.blurAmount; $("blurVal").textContent = config.blurAmount + "px";
-    $("dim").value = config.dim; $("dimVal").textContent = config.dim + "%";
-    $("clockOn").checked = !!config.clockOn;
-    $("clock24").checked = !!config.clock24;
-    $("dateOn").checked = !!config.dateOn;
-    setSeg("sourceSeg", "src", config.source);
-    setSeg("fitSeg", "fit", config.fit);
-    toggleSourceFields();
-    $("blurFields").style.display = config.fit === "fill" ? "none" : "";
-  }
-
+  // ---- form <-> config ----
   function setSeg(segId, attr, val) {
     var btns = $(segId).querySelectorAll("button");
     for (var i = 0; i < btns.length; i++) {
@@ -492,20 +632,69 @@
     $("urlFields").classList.toggle("hide", config.source !== "urls");
   }
 
-  // ---- read the form back into config ----
+  function updateFramingVisibility() {
+    var isFit = config.fit === "fit";
+    $("bgField").style.display = isFit ? "" : "none";
+    var fillChoice = $("bgFill").value;
+    $("bgColorField").classList.toggle("hide", !(isFit && fillChoice === "color"));
+    $("blurFields").style.display = (isFit && fillChoice === "blur") ? "" : "none";
+  }
+
+  function fillForm() {
+    $("album").value = config.album || "";
+    $("proxy").value = config.proxy || "";
+    $("urls").value = (config.urls || []).join("\n");
+    $("interval").value = config.interval; $("intervalVal").textContent = config.interval + "s";
+    $("transition").value = config.transition;
+    $("order").value = config.order;
+    $("speed").value = config.speed; $("speedVal").textContent = config.speed + "s";
+    $("bgFill").value = config.bgFill || "blur";
+    $("bgColor").value = config.bgColor || "#101010";
+    $("blurAmount").value = config.blurAmount; $("blurVal").textContent = config.blurAmount + "px";
+    $("dim").value = config.dim; $("dimVal").textContent = config.dim + "%";
+    $("font").value = CURATED.indexOf(config.font) >= 0 ? config.font : "Custom";
+    $("fontCustom").value = config.fontCustom || "";
+    $("fontCustomField").classList.toggle("hide", $("font").value !== "Custom");
+    $("accent").value = config.accent || "#c6a15b";
+    $("clockOn").checked = !!config.clockOn;
+    $("clock24").checked = !!config.clock24;
+    $("dateOn").checked = !!config.dateOn;
+    $("clockSize").value = config.clockSize || "M";
+    $("textPos").value = config.textPos || "bl";
+    $("nightOn").checked = !!config.nightOn;
+    $("nightStart").value = config.nightStart || "22:00";
+    $("nightEnd").value = config.nightEnd || "07:00";
+    $("nightDim").value = config.nightDim; $("nightDimVal").textContent = config.nightDim + "%";
+    setSeg("sourceSeg", "src", config.source);
+    setSeg("fitSeg", "fit", config.fit);
+    toggleSourceFields();
+    updateFramingVisibility();
+  }
+
   function readForm() {
     config.album = $("album").value.trim();
     config.proxy = $("proxy").value.trim();
     config.urls = $("urls").value.split("\n").map(function (s) { return s.trim(); }).filter(Boolean);
     config.interval = parseInt($("interval").value, 10);
     config.transition = $("transition").value;
+    config.order = $("order").value;
     config.speed = parseFloat($("speed").value);
-    config.shuffle = $("shuffle").checked;
+    config.bgFill = $("bgFill").value;
+    config.bgColor = $("bgColor").value;
     config.blurAmount = parseInt($("blurAmount").value, 10);
     config.dim = parseInt($("dim").value, 10);
+    config.font = $("font").value;
+    config.fontCustom = $("fontCustom").value.trim();
+    config.accent = $("accent").value;
     config.clockOn = $("clockOn").checked;
     config.clock24 = $("clock24").checked;
     config.dateOn = $("dateOn").checked;
+    config.clockSize = $("clockSize").value;
+    config.textPos = $("textPos").value;
+    config.nightOn = $("nightOn").checked;
+    config.nightStart = $("nightStart").value;
+    config.nightEnd = $("nightEnd").value;
+    config.nightDim = parseInt($("nightDim").value, 10);
   }
 
   // ---- photo loading ----
@@ -514,7 +703,6 @@
       photos = (config.urls || []).map(function (u) { return { url: u, width: 0, height: 0, caption: "", date: "" }; });
       return Promise.resolve();
     }
-    // iCloud via proxy
     if (!config.proxy) return Promise.reject(new Error("Add your proxy address in settings so The Looking Glass can reach the album."));
     if (!config.album) return Promise.reject(new Error("Paste your shared album link in settings."));
     var token = config.album.indexOf("#") !== -1 ? config.album.split("#").pop() : config.album;
@@ -530,17 +718,22 @@
   }
 
   function buildOrder() {
-    order = photos.map(function (_, i) { return i; });
-    if (config.shuffle) {
-      for (var i = order.length - 1; i > 0; i--) {
+    var idx = photos.map(function (_, i) { return i; });
+    if (config.order === "newest" || config.order === "oldest") {
+      idx.sort(function (a, b) {
+        var da = Date.parse(photos[a].date) || 0, db = Date.parse(photos[b].date) || 0;
+        return config.order === "newest" ? db - da : da - db;
+      });
+    } else if (config.order === "shuffle") {
+      for (var i = idx.length - 1; i > 0; i--) {
         var j = Math.floor(Math.random() * (i + 1));
-        var t = order[i]; order[i] = order[j]; order[j] = t;
+        var t = idx[i]; idx[i] = idx[j]; idx[j] = t;
       }
     }
-    pos = 0;
+    order = idx; pos = 0;
   }
 
-  // ---- the slideshow engine ----
+  // ---- slideshow engine ----
   function preload(url) { var im = new Image(); im.src = url; }
 
   function showNext(first) {
@@ -551,50 +744,46 @@
     var bg = nextSlot.querySelector(".bg");
     var fg = nextSlot.querySelector(".fg");
 
-    // reset transition classes
     nextSlot.className = "slot";
     nextSlot.style.transform = "";
     curSlot.style.transform = "";
 
     fg.onload = function () {
       updateOverlay(photo);
-
       var t = config.transition;
-      // entry starting state (no transition yet)
+
       nextSlot.style.transition = "none";
       if (t === "slide") {
         nextSlot.style.transform = "translateX(100%)";
-        nextSlot.classList.add("active"); // slide keeps opacity up
+        nextSlot.classList.add("active");
       } else {
-        nextSlot.style.opacity = ""; // start hidden via .slot default (opacity:0)
+        nextSlot.style.opacity = "";
       }
-      // force reflow so the browser registers the start state
       void nextSlot.offsetWidth;
       nextSlot.style.transition = "";
 
       if (t === "fadeblack") {
-        // fade current out first, then bring next in through black
         curSlot.classList.remove("active");
-        setTimeout(function () {
-          nextSlot.classList.add("active");
-        }, config.speed * 1000);
+        setTimeout(function () { nextSlot.classList.add("active"); }, config.speed * 1000);
       } else if (t === "slide") {
         nextSlot.style.transform = "translateX(0)";
         curSlot.style.transform = "translateX(-100%)";
         curSlot.classList.remove("active");
       } else {
-        if (t === "kenburns") nextSlot.classList.add("kb");
+        if (t === "kenburns") {
+          nextSlot.style.setProperty("--kbx", (Math.random() * 4 - 2).toFixed(2) + "%");
+          nextSlot.style.setProperty("--kby", (Math.random() * 4 - 2).toFixed(2) + "%");
+          nextSlot.classList.add("kb");
+        }
         nextSlot.classList.add("active");
         curSlot.classList.remove("active");
       }
 
       active = 1 - active;
-
-      // preload the following photo
       var np = (pos + 1) % order.length;
       preload(photos[order[np]].url);
     };
-    fg.onerror = function () { advance(); }; // skip a broken image
+    fg.onerror = function () { advance(); };
 
     bg.src = photo.url;
     fg.src = photo.url;
@@ -602,7 +791,7 @@
 
   function advance() {
     pos = (pos + 1) % order.length;
-    if (pos === 0 && config.shuffle && order.length > 1) buildOrder();
+    if (pos === 0 && config.order === "shuffle" && order.length > 1) buildOrder();
     showNext(false);
   }
 
@@ -613,7 +802,6 @@
     showNext(true);
     timer = setInterval(advance, config.interval * 1000);
   }
-
   function stop() { running = false; clearInterval(timer); }
 
   function showStatus(msg) {
@@ -624,6 +812,7 @@
 
   function run() {
     applyCssVars();
+    applyNight();
     loadPhotos().then(function () {
       if (!photos.length) { showStatus("No photos found. Check the album or your links in settings."); return; }
       buildOrder();
@@ -633,17 +822,15 @@
     });
   }
 
-  // ---- overlay: clock, date, caption ----
+  // ---- overlay ----
   function updateClock() {
-    if (!config.clockOn) { return; }
-    var d = new Date();
-    var h = d.getHours(), m = d.getMinutes();
+    if (!config.clockOn) return;
+    var d = new Date(), h = d.getHours(), m = d.getMinutes();
     var mm = (m < 10 ? "0" : "") + m;
     if (config.clock24) {
       $("clock").textContent = (h < 10 ? "0" : "") + h + ":" + mm;
     } else {
-      var ap = h >= 12 ? "PM" : "AM";
-      var hh = h % 12; if (hh === 0) hh = 12;
+      var ap = h >= 12 ? "PM" : "AM", hh = h % 12; if (hh === 0) hh = 12;
       $("clock").textContent = hh + ":" + mm + " " + ap;
     }
   }
@@ -651,14 +838,13 @@
   function updateOverlay(photo) {
     $("clock").style.display = config.clockOn ? "" : "none";
     var showDate = config.dateOn;
-    $("datecap").style.display = showDate ? "" : "none";
+    $("date").style.display = showDate ? "" : "none";
+    $("caption").style.display = showDate ? "" : "none";
     if (showDate) {
       var label = "";
       if (photo && photo.date) {
         var dt = new Date(photo.date);
-        if (!isNaN(dt.getTime())) {
-          label = dt.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" });
-        }
+        if (!isNaN(dt.getTime())) label = dt.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" });
       }
       $("date").textContent = label;
       $("caption").textContent = photo && photo.caption ? photo.caption : "";
@@ -667,7 +853,19 @@
   }
   setInterval(updateClock, 1000); updateClock();
 
-  // ---- controls / settings UI ----
+  // ---- night dimming ----
+  function parseHM(s) { var p = (s || "").split(":"); return (parseInt(p[0], 10) || 0) * 60 + (parseInt(p[1], 10) || 0); }
+  function nightActive() {
+    if (!config.nightOn) return false;
+    var now = new Date(), cur = now.getHours() * 60 + now.getMinutes();
+    var s = parseHM(config.nightStart), e = parseHM(config.nightEnd);
+    if (s === e) return false;
+    return s < e ? (cur >= s && cur < e) : (cur >= s || cur < e);
+  }
+  function applyNight() { $("night").style.opacity = nightActive() ? (config.nightDim / 100) : 0; }
+  setInterval(applyNight, 30000);
+
+  // ---- controls / settings ----
   var gearTimer;
   function flashChrome() {
     $("gear").classList.add("show");
@@ -686,7 +884,6 @@
   $("closeSettings").addEventListener("click", function () { closeSettings(); if (running || photos.length) start(); });
   $("statusOpen").addEventListener("click", openSettings);
 
-  // segmented controls
   $("sourceSeg").addEventListener("click", function (e) {
     var b = e.target.closest("button"); if (!b) return;
     config.source = b.getAttribute("data-src");
@@ -695,15 +892,16 @@
   $("fitSeg").addEventListener("click", function (e) {
     var b = e.target.closest("button"); if (!b) return;
     config.fit = b.getAttribute("data-fit");
-    setSeg("fitSeg", "fit", config.fit);
-    $("blurFields").style.display = config.fit === "fill" ? "none" : "";
+    setSeg("fitSeg", "fit", config.fit); updateFramingVisibility();
   });
+  $("bgFill").addEventListener("change", function () { config.bgFill = this.value; updateFramingVisibility(); });
+  $("font").addEventListener("change", function () { $("fontCustomField").classList.toggle("hide", this.value !== "Custom"); });
 
-  // live range labels
   $("interval").addEventListener("input", function () { $("intervalVal").textContent = this.value + "s"; });
   $("speed").addEventListener("input", function () { $("speedVal").textContent = this.value + "s"; });
   $("blurAmount").addEventListener("input", function () { $("blurVal").textContent = this.value + "px"; });
   $("dim").addEventListener("input", function () { $("dimVal").textContent = this.value + "%"; });
+  $("nightDim").addEventListener("input", function () { $("nightDimVal").textContent = this.value + "%"; });
 
   function toast(msg) {
     var t = $("toast"); t.textContent = msg; t.classList.add("show");
@@ -727,7 +925,6 @@
     closeSettings(); run();
   });
 
-  // keyboard: space pauses, arrows step, S opens settings
   document.addEventListener("keydown", function (e) {
     if ($("settings").classList.contains("open")) return;
     if (e.key === " ") { e.preventDefault(); running ? stop() : start(); }
@@ -739,6 +936,7 @@
   // ---- boot ----
   var hasSource = (config.source === "urls" && config.urls.length) ||
                   (config.source === "icloud" && config.proxy && config.album);
+  applyCssVars();
   fillForm();
   if (hasSource) { run(); }
   else { showStatus("A quiet frame for the photos you love. Open settings to point it at an album."); $("gear").classList.add("show"); }
