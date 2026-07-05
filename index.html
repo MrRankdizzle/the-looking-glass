@@ -100,7 +100,7 @@
     text-shadow: 0 1px 16px rgba(0,0,0,0.55);
   }
   #weather .wicon { display: inline-flex; color: var(--brass); }
-  #weather .wicon svg { width: 1.15em; height: 1.15em; display: block; }
+  #weather .wicon svg { width: 1.15em; height: 1.15em; display: block; filter: drop-shadow(0 1px 3px rgba(0,0,0,0.55)); }
   #weather .wtemp { font-weight: 400; }
   #weather .wcond {
     font-family: "Inter", system-ui, sans-serif;
@@ -433,7 +433,7 @@
     <div class="field">
       <label for="accent">Accent color</label>
       <input type="color" id="accent" value="#c6a15b" />
-      <div class="hint">Colors the weather icon, date label, controls, and highlights.</div>
+      <div class="hint">Colors the date label, controls, and highlights.</div>
     </div>
   </div>
 
@@ -482,9 +482,17 @@
     </div>
     <div class="field">
       <label for="weatherPlace">Location</label>
-      <input type="text" id="weatherPlace" placeholder="e.g. Green Bay, Wisconsin" />
-      <div class="hint">City or town name. Looked up when you save; updates every 15 minutes.</div>
+      <div class="row2" style="gap:8px">
+        <input type="text" id="weatherPlace" placeholder="City, ZIP, or address" style="flex:2" />
+        <button type="button" class="btn ghost" id="findLoc" style="flex:1;padding:11px 8px;font-size:13px">Find</button>
+      </div>
+      <div class="hint">Type a city ("Green Bay, WI"), a ZIP code ("54301"), or a street address, then tap Find. Weather updates every 15 minutes.</div>
     </div>
+    <div id="matchField" class="field hide">
+      <label for="weatherMatch">Which one?</label>
+      <select id="weatherMatch"></select>
+    </div>
+    <div id="locConfirm" class="hint" style="display:none;color:var(--brass);margin-top:-6px;margin-bottom:16px"></div>
     <div class="field">
       <label>Units</label>
       <div class="seg" id="unitSeg">
@@ -538,6 +546,8 @@
   var timer = null;
   var running = false;
   var weatherTimer = null;
+  var locCandidates = [];
+  var geoResolvedFor = null;
 
   var store = {
     get: function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
@@ -548,15 +558,15 @@
 
   // ---- weather icons (minimal line art, inherit accent color) ----
   var ICONS = {
-    sun: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.6v2.3M12 19.1v2.3M4.7 4.7l1.6 1.6M17.7 17.7l1.6 1.6M2.6 12h2.3M19.1 12h2.3M4.7 19.3l1.6-1.6M17.7 6.3l1.6-1.6"/></svg>',
-    moon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M20 14.6A8 8 0 1 1 9.4 4a6.3 6.3 0 0 0 10.6 10.6z"/></svg>',
-    cloud: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M7 18h10a3.7 3.7 0 0 0 .4-7.3 5.1 5.1 0 0 0-9.8-1.3A3.9 3.9 0 0 0 7 18z"/></svg>',
-    partlyDay: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="8.3" cy="7.6" r="2.7"/><path d="M8.3 2.6v1.3M3.6 7.6h-1.3M4.9 4.2l.9.9M11.7 4.2l-.9.9M13 7.6h0"/><path d="M9.6 19h6.9a3 3 0 0 0 .3-6 4.2 4.2 0 0 0-8-1.1A3.2 3.2 0 0 0 9.6 19z"/></svg>',
-    partlyNight: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13.4 4.2a3.6 3.6 0 1 1-4.2 4.6"/><path d="M9.6 19h6.9a3 3 0 0 0 .3-6 4.2 4.2 0 0 0-8-1.1A3.2 3.2 0 0 0 9.6 19z"/></svg>',
-    rain: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7.5 15h9a3.4 3.4 0 0 0 .4-6.8 4.8 4.8 0 0 0-9.1-1.2A3.6 3.6 0 0 0 7.5 15z"/><path d="M9 18l-1 2.2M13 18l-1 2.2M17 18l-1 2.2"/></svg>',
-    snow: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7.5 14.5h9a3.4 3.4 0 0 0 .4-6.8 4.8 4.8 0 0 0-9.1-1.2A3.6 3.6 0 0 0 7.5 14.5z"/><path d="M9 18.6h0M12.5 20h0M16 18.6h0" stroke-width="2.6"/></svg>',
-    fog: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 12h9.5a3.2 3.2 0 0 0 .3-6.4 4.5 4.5 0 0 0-8.6-1.1A3.4 3.4 0 0 0 7 12z"/><path d="M5 16h14M7 19.5h11"/></svg>',
-    thunder: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7.5 14h9a3.4 3.4 0 0 0 .4-6.8 4.8 4.8 0 0 0-9.1-1.2A3.6 3.6 0 0 0 7.5 14z"/><path d="M12.6 13.5l-2.4 3.6h2.5l-1.9 3.3"/></svg>'
+    sun: '<svg viewBox="0 0 24 24" fill="none" stroke="#f6b73c" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.6v2.3M12 19.1v2.3M4.7 4.7l1.6 1.6M17.7 17.7l1.6 1.6M2.6 12h2.3M19.1 12h2.3M4.7 19.3l1.6-1.6M17.7 6.3l1.6-1.6"/></svg>',
+    moon: '<svg viewBox="0 0 24 24" fill="none" stroke="#ecd98f" stroke-width="1.7" stroke-linejoin="round"><path d="M20 14.6A8 8 0 1 1 9.4 4a6.3 6.3 0 0 0 10.6 10.6z"/></svg>',
+    cloud: '<svg viewBox="0 0 24 24" fill="none" stroke="#eef2f5" stroke-width="1.7" stroke-linejoin="round"><path d="M7 18h10a3.7 3.7 0 0 0 .4-7.3 5.1 5.1 0 0 0-9.8-1.3A3.9 3.9 0 0 0 7 18z"/></svg>',
+    partlyDay: '<svg viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="8.3" cy="7.6" r="2.7" stroke="#f6b73c"/><path d="M8.3 2.6v1.3M3.6 7.6h-1.3M4.9 4.2l.9.9M11.7 4.2l-.9.9M13 7.6h0" stroke="#f6b73c"/><path d="M9.6 19h6.9a3 3 0 0 0 .3-6 4.2 4.2 0 0 0-8-1.1A3.2 3.2 0 0 0 9.6 19z" stroke="#eef2f5"/></svg>',
+    partlyNight: '<svg viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13.4 4.2a3.6 3.6 0 1 1-4.2 4.6" stroke="#ecd98f"/><path d="M9.6 19h6.9a3 3 0 0 0 .3-6 4.2 4.2 0 0 0-8-1.1A3.2 3.2 0 0 0 9.6 19z" stroke="#eef2f5"/></svg>',
+    rain: '<svg viewBox="0 0 24 24" fill="none" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7.5 15h9a3.4 3.4 0 0 0 .4-6.8 4.8 4.8 0 0 0-9.1-1.2A3.6 3.6 0 0 0 7.5 15z" stroke="#b3c4d4"/><path d="M9 18l-1 2.2M13 18l-1 2.2M17 18l-1 2.2" stroke="#3f9ae0"/></svg>',
+    snow: '<svg viewBox="0 0 24 24" fill="none" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7.5 14.5h9a3.4 3.4 0 0 0 .4-6.8 4.8 4.8 0 0 0-9.1-1.2A3.6 3.6 0 0 0 7.5 14.5z" stroke="#e2ecf3"/><path d="M9 18.6h0M12.5 20h0M16 18.6h0" stroke="#9fd3ea" stroke-width="2.6"/></svg>',
+    fog: '<svg viewBox="0 0 24 24" fill="none" stroke="#c3c9cf" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 12h9.5a3.2 3.2 0 0 0 .3-6.4 4.5 4.5 0 0 0-8.6-1.1A3.4 3.4 0 0 0 7 12z"/><path d="M5 16h14M7 19.5h11"/></svg>',
+    thunder: '<svg viewBox="0 0 24 24" fill="none" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7.5 14h9a3.4 3.4 0 0 0 .4-6.8 4.8 4.8 0 0 0-9.1-1.2A3.6 3.6 0 0 0 7.5 14z" stroke="#96a3b5"/><path d="M12.6 13.5l-2.4 3.6h2.5l-1.9 3.3" stroke="#f6c945"/></svg>'
   };
 
   function wmoToIcon(code, isDay) {
@@ -715,6 +725,16 @@
     $("weatherOn").checked = !!config.weatherOn;
     $("weatherPlace").value = config.weatherPlace || "";
     setSeg("unitSeg", "unit", config.weatherUnit || "F");
+    locCandidates = [];
+    $("matchField").classList.add("hide");
+    if (config.weatherLat && config.weatherLabel) {
+      geoResolvedFor = config.weatherPlace;
+      $("locConfirm").textContent = "Using: " + config.weatherLabel;
+      $("locConfirm").style.display = "";
+    } else {
+      geoResolvedFor = null;
+      $("locConfirm").style.display = "none";
+    }
     $("nightOn").checked = !!config.nightOn;
     $("nightStart").value = config.nightStart || "22:00";
     $("nightEnd").value = config.nightEnd || "07:00";
@@ -918,14 +938,60 @@
   setInterval(updateClock, 1000); updateClock();
 
   // ---- weather (Open-Meteo, no key, CORS-enabled) ----
-  function geocode(place) {
-    return fetch("https://geocoding-api.open-meteo.com/v1/search?count=1&language=en&name=" + encodeURIComponent(place))
+  function shortenLabel(s) { return s.split(",").slice(0, 3).join(",").trim(); }
+
+  // City / town, with an optional ", state" or ", country" hint after a comma.
+  function omGeocode(query) {
+    var parts = query.split(",").map(function (s) { return s.trim(); }).filter(Boolean);
+    var name = parts[0] || query;
+    var hint = parts.slice(1).join(" ").toLowerCase();
+    return fetch("https://geocoding-api.open-meteo.com/v1/search?count=10&language=en&name=" + encodeURIComponent(name))
       .then(function (r) { return r.json(); })
       .then(function (d) {
-        if (!d.results || !d.results.length) throw new Error("Couldn't find \"" + place + "\". Try a city or town name.");
-        var g = d.results[0];
-        return { lat: g.latitude, lon: g.longitude, label: (g.name || place) + (g.admin1 ? ", " + g.admin1 : "") };
+        var res = (d && d.results) ? d.results : [];
+        var cands = res.map(function (g) {
+          var label = g.name + (g.admin1 ? ", " + g.admin1 : "") +
+                      (g.country && g.country !== "United States" ? ", " + g.country : "");
+          var hay = ((g.admin1 || "") + " " + (g.admin2 || "") + " " + (g.country || "") + " " + (g.country_code || "")).toLowerCase();
+          return { lat: g.latitude, lon: g.longitude, label: label, _match: hint ? (hay.indexOf(hint) >= 0 ? 0 : 1) : 0 };
+        });
+        cands.sort(function (a, b) { return a._match - b._match; });
+        return cands;
       });
+  }
+
+  // US ZIP code.
+  function zipGeocode(zip) {
+    return fetch("https://api.zippopotam.us/us/" + encodeURIComponent(zip))
+      .then(function (r) { if (!r.ok) throw new Error("zip"); return r.json(); })
+      .then(function (d) {
+        return (d.places || []).map(function (p) {
+          return { lat: +p.latitude, lon: +p.longitude, label: p["place name"] + ", " + (p["state abbreviation"] || p.state || "") };
+        });
+      });
+  }
+
+  // Free-form addresses and anything else (OpenStreetMap).
+  function nominatim(query) {
+    return fetch("https://nominatim.openstreetmap.org/search?format=jsonv2&limit=6&q=" + encodeURIComponent(query))
+      .then(function (r) { return r.json(); })
+      .then(function (arr) {
+        return (arr || []).map(function (r) {
+          return { lat: +r.lat, lon: +r.lon, label: shortenLabel(r.display_name) };
+        });
+      });
+  }
+
+  // Pick the right lookup for whatever the person typed. Returns a candidate list.
+  function resolveLocations(query) {
+    query = (query || "").trim();
+    if (!query) return Promise.resolve([]);
+    if (/^\d{5}$/.test(query)) {
+      return zipGeocode(query).catch(function () { return nominatim(query); });
+    }
+    return omGeocode(query).then(function (c) {
+      return (c && c.length) ? c : nominatim(query);
+    }).catch(function () { return nominatim(query); });
   }
 
   function fetchWeather() {
@@ -950,8 +1016,11 @@
     if (!config.weatherOn) { $("weather").style.display = "none"; refreshOverlayHidden(); return; }
     var go = function () { fetchWeather(); weatherTimer = setInterval(fetchWeather, 15 * 60 * 1000); };
     if ((!config.weatherLat || !config.weatherLon) && config.weatherPlace) {
-      geocode(config.weatherPlace).then(function (g) {
-        config.weatherLat = g.lat; config.weatherLon = g.lon; config.weatherLabel = g.label; go();
+      resolveLocations(config.weatherPlace).then(function (cands) {
+        if (cands && cands.length) {
+          var g = cands[0];
+          config.weatherLat = g.lat; config.weatherLon = g.lon; config.weatherLabel = g.label; go();
+        } else { $("weather").style.display = "none"; refreshOverlayHidden(); }
       }).catch(function () { $("weather").style.display = "none"; refreshOverlayHidden(); });
     } else { go(); }
   }
@@ -1002,6 +1071,42 @@
     config.weatherUnit = b.getAttribute("data-unit");
     setSeg("unitSeg", "unit", config.weatherUnit);
   });
+
+  function applyCandidate(i) {
+    var c = locCandidates[i]; if (!c) return;
+    config.weatherLat = c.lat; config.weatherLon = c.lon; config.weatherLabel = c.label;
+    geoResolvedFor = $("weatherPlace").value.trim();
+    $("locConfirm").textContent = "Using: " + c.label;
+    $("locConfirm").style.display = "";
+  }
+
+  $("findLoc").addEventListener("click", function () {
+    var q = $("weatherPlace").value.trim();
+    if (!q) { toast("Type a location first."); return; }
+    var self = this; self.textContent = "\u2026";
+    resolveLocations(q).then(function (cands) {
+      self.textContent = "Find";
+      locCandidates = cands || [];
+      var sel = $("weatherMatch"); sel.innerHTML = "";
+      if (!locCandidates.length) {
+        $("matchField").classList.add("hide");
+        $("locConfirm").style.display = "none";
+        config.weatherLat = null; config.weatherLon = null; geoResolvedFor = null;
+        toast("Couldn't find that. Try a city, a ZIP, or a simpler address.");
+        return;
+      }
+      locCandidates.forEach(function (c, i) {
+        var o = document.createElement("option"); o.value = i; o.textContent = c.label; sel.appendChild(o);
+      });
+      $("matchField").classList.toggle("hide", locCandidates.length < 2);
+      applyCandidate(0);
+    }).catch(function () {
+      self.textContent = "Find";
+      toast("Location lookup failed. Check your connection and try again.");
+    });
+  });
+
+  $("weatherMatch").addEventListener("change", function () { applyCandidate(parseInt(this.value, 10)); });
   $("bgFill").addEventListener("change", function () { config.bgFill = this.value; updateFramingVisibility(); });
   $("font").addEventListener("change", function () { $("fontCustomField").classList.toggle("hide", this.value !== "Custom"); });
 
@@ -1038,13 +1143,24 @@
       closeSettings(); run();
     };
     if (config.weatherOn && config.weatherPlace) {
-      geocode(config.weatherPlace).then(function (g) {
-        config.weatherLat = g.lat; config.weatherLon = g.lon; config.weatherLabel = g.label;
-        finish(null);
-      }).catch(function (err) {
-        config.weatherLat = null; config.weatherLon = null;
-        toast(err.message); finish(err.message);
-      });
+      if (geoResolvedFor === config.weatherPlace && config.weatherLat) {
+        finish(null); // already found via Find (or unchanged since last save)
+      } else {
+        resolveLocations(config.weatherPlace).then(function (cands) {
+          if (cands && cands.length) {
+            var c = cands[0];
+            config.weatherLat = c.lat; config.weatherLon = c.lon; config.weatherLabel = c.label;
+            geoResolvedFor = config.weatherPlace;
+            finish(null);
+          } else {
+            config.weatherLat = null; config.weatherLon = null;
+            toast("Couldn't find that location \u2014 weather is off for now."); finish("nogeo");
+          }
+        }).catch(function () {
+          config.weatherLat = null; config.weatherLon = null;
+          toast("Location lookup failed \u2014 weather is off for now."); finish("nogeo");
+        });
+      }
     } else {
       config.weatherLat = null; config.weatherLon = null;
       finish(null);
