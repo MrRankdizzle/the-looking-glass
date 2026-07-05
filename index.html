@@ -1,0 +1,748 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>The Looking Glass</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --ink: #14110d;         /* warm near-black, so photos sit on something soft */
+    --panel: rgba(24, 20, 15, 0.86);
+    --line: rgba(198, 161, 91, 0.22);
+    --brass: #c6a15b;       /* the one accent: gilded picture-frame warmth */
+    --brass-dim: rgba(198, 161, 91, 0.55);
+    --cream: #f2ece1;
+    --muted: rgba(242, 236, 225, 0.55);
+    --interval: 8s;
+    --speed: 1.5s;
+    --blur: 40px;
+    --dim: 0.35;
+  }
+
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%; width: 100%;
+    background: var(--ink); color: var(--cream);
+    font-family: "Inter", system-ui, -apple-system, sans-serif;
+    overflow: hidden;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* ---------- The stage: where photos live ---------- */
+  #stage { position: fixed; inset: 0; background: #000; }
+
+  .slot {
+    position: absolute; inset: 0;
+    opacity: 0;
+    transition: opacity var(--speed) ease, transform var(--speed) ease;
+    will-change: opacity, transform;
+  }
+  .slot.active { opacity: 1; }
+
+  /* Blurred bleed: the same photo, cropped to fill, blurred and dimmed,
+     so a landscape frame never shows dead black bars around a portrait. */
+  .slot .bg {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    object-fit: cover;
+    transform: scale(1.12);
+    filter: blur(var(--blur)) brightness(calc(1 - var(--dim)));
+  }
+  /* The real photo, whole and uncropped, floating on the blur. */
+  .slot .fg {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    object-fit: contain;
+    will-change: transform;
+  }
+  /* Fill mode: crop to the frame instead of respecting aspect ratio. */
+  #stage.fill .slot .fg { object-fit: cover; }
+  #stage.fill .slot .bg { display: none; }
+
+  /* Ken Burns drift, applied per-slide */
+  @keyframes drift {
+    from { transform: scale(1.0) translate(0, 0); }
+    to   { transform: scale(1.09) translate(var(--kbx, -1.5%), var(--kby, -1.5%)); }
+  }
+  .slot.kb .fg { animation: drift var(--interval) ease-out both; }
+
+  /* ---------- Overlay: clock, date, caption ---------- */
+  #overlay {
+    position: fixed; left: 0; right: 0; bottom: 0;
+    padding: clamp(20px, 4vh, 48px) clamp(24px, 5vw, 64px);
+    background: linear-gradient(to top, rgba(0,0,0,0.5), rgba(0,0,0,0));
+    pointer-events: none;
+    display: flex; align-items: flex-end; justify-content: space-between;
+    gap: 24px;
+    transition: opacity 0.6s ease;
+  }
+  #overlay.hidden { opacity: 0; }
+  #clock {
+    font-family: "Fraunces", Georgia, serif;
+    font-weight: 300;
+    font-size: clamp(40px, 8vw, 92px);
+    line-height: 0.9;
+    letter-spacing: -0.01em;
+    text-shadow: 0 2px 24px rgba(0,0,0,0.55);
+  }
+  #datecap { text-align: right; max-width: 55%; }
+  #date {
+    font-size: clamp(13px, 1.6vw, 18px);
+    letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--brass);
+    text-shadow: 0 1px 12px rgba(0,0,0,0.6);
+  }
+  #caption {
+    margin-top: 6px;
+    font-family: "Fraunces", Georgia, serif;
+    font-size: clamp(15px, 2vw, 24px);
+    color: rgba(242,236,225,0.9);
+    text-shadow: 0 1px 16px rgba(0,0,0,0.6);
+  }
+
+  /* ---------- Setup / status states ---------- */
+  #status {
+    position: fixed; inset: 0; z-index: 30;
+    display: none; place-items: center; text-align: center;
+    padding: 32px;
+    background: radial-gradient(120% 120% at 50% 30%, #1c1811 0%, #100d09 70%);
+  }
+  #status.show { display: grid; }
+  #status .mark {
+    font-family: "Fraunces", Georgia, serif; font-weight: 300;
+    font-size: clamp(34px, 7vw, 56px); letter-spacing: 0.02em;
+    color: var(--cream);
+  }
+  #status .mark b { color: var(--brass); font-weight: 400; }
+  #status p { color: var(--muted); max-width: 42ch; margin: 14px auto 0; line-height: 1.55; }
+  #status .cta { margin-top: 26px; }
+
+  /* ---------- Tap target + gear ---------- */
+  #gear {
+    position: fixed; top: 16px; right: 16px; z-index: 40;
+    width: 46px; height: 46px; border-radius: 50%;
+    display: grid; place-items: center; cursor: pointer;
+    background: rgba(20,17,13,0.55); border: 1px solid var(--line);
+    color: var(--brass); opacity: 0;
+    transition: opacity 0.4s ease, background 0.2s ease;
+    -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+  }
+  #gear.show { opacity: 1; }
+  #gear:hover { background: rgba(30,25,18,0.8); }
+  #gear svg { width: 22px; height: 22px; }
+
+  /* ---------- Settings panel ---------- */
+  #settings {
+    position: fixed; top: 0; right: 0; bottom: 0; z-index: 50;
+    width: min(440px, 100%);
+    background: var(--panel);
+    -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px);
+    border-left: 1px solid var(--line);
+    transform: translateX(100%);
+    transition: transform 0.42s cubic-bezier(0.4, 0, 0.1, 1);
+    overflow-y: auto; overscroll-behavior: contain;
+  }
+  #settings.open { transform: translateX(0); }
+  .panel-head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    padding: 26px 28px 6px;
+  }
+  .panel-head h1 {
+    font-family: "Fraunces", Georgia, serif; font-weight: 400;
+    font-size: 30px; margin: 0; letter-spacing: 0.01em;
+  }
+  .panel-head h1 span { color: var(--brass); }
+  .panel-head .close {
+    background: none; border: none; color: var(--muted);
+    font-size: 26px; cursor: pointer; line-height: 1; padding: 4px;
+  }
+  .panel-sub { padding: 0 28px 8px; color: var(--muted); font-size: 13px; }
+
+  .group { padding: 18px 28px; border-top: 1px solid var(--line); }
+  .group > .glabel {
+    font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--brass-dim); margin-bottom: 14px;
+  }
+  .field { margin-bottom: 16px; }
+  .field:last-child { margin-bottom: 0; }
+  .field label { display: block; font-size: 13px; color: var(--cream); margin-bottom: 7px; }
+  .field .hint { font-size: 12px; color: var(--muted); margin-top: 6px; line-height: 1.45; }
+
+  input[type="text"], input[type="url"], input[type="number"], select, textarea {
+    width: 100%; padding: 11px 13px;
+    background: rgba(0,0,0,0.28); color: var(--cream);
+    border: 1px solid var(--line); border-radius: 10px;
+    font-family: inherit; font-size: 14px;
+  }
+  textarea { resize: vertical; min-height: 88px; line-height: 1.5; }
+  input:focus, select:focus, textarea:focus {
+    outline: none; border-color: var(--brass-dim);
+    box-shadow: 0 0 0 3px rgba(198,161,91,0.14);
+  }
+  select { appearance: none; -webkit-appearance: none;
+    background-image: linear-gradient(45deg, transparent 50%, var(--brass) 50%),
+                      linear-gradient(135deg, var(--brass) 50%, transparent 50%);
+    background-position: calc(100% - 18px) 55%, calc(100% - 13px) 55%;
+    background-size: 5px 5px, 5px 5px; background-repeat: no-repeat;
+  }
+
+  /* segmented control */
+  .seg { display: flex; gap: 4px; background: rgba(0,0,0,0.28);
+    border: 1px solid var(--line); border-radius: 10px; padding: 4px; }
+  .seg button {
+    flex: 1; padding: 9px 6px; border: none; border-radius: 7px;
+    background: none; color: var(--muted); font-family: inherit;
+    font-size: 13px; cursor: pointer; transition: all 0.18s ease;
+  }
+  .seg button.on { background: var(--brass); color: #1a1408; font-weight: 600; }
+
+  /* toggle */
+  .toggle-row { display: flex; align-items: center; justify-content: space-between; }
+  .toggle-row label { margin: 0; }
+  .switch { position: relative; width: 46px; height: 27px; flex: none; cursor: pointer; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .switch .track {
+    position: absolute; inset: 0; border-radius: 999px;
+    background: rgba(255,255,255,0.14); transition: background 0.2s ease;
+  }
+  .switch .knob {
+    position: absolute; top: 3px; left: 3px; width: 21px; height: 21px;
+    border-radius: 50%; background: var(--cream); transition: transform 0.2s ease;
+  }
+  .switch input:checked + .track { background: var(--brass); }
+  .switch input:checked + .track + .knob { transform: translateX(19px); }
+
+  /* range */
+  input[type="range"] { width: 100%; accent-color: var(--brass); }
+  .range-val { font-size: 12px; color: var(--brass); float: right; }
+
+  .actions { padding: 20px 28px 34px; border-top: 1px solid var(--line);
+    position: sticky; bottom: 0; background: var(--panel);
+    -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px); }
+  .btn {
+    width: 100%; padding: 13px; border-radius: 11px; cursor: pointer;
+    font-family: inherit; font-size: 15px; font-weight: 600;
+    border: 1px solid var(--line); background: none; color: var(--cream);
+    transition: all 0.18s ease;
+  }
+  .btn.primary { background: var(--brass); color: #1a1408; border-color: var(--brass); margin-bottom: 10px; }
+  .btn.primary:hover { filter: brightness(1.06); }
+  .btn.ghost:hover { border-color: var(--brass-dim); color: var(--brass); }
+
+  .hide { display: none !important; }
+
+  #toast {
+    position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%) translateY(20px);
+    z-index: 60; background: rgba(20,17,13,0.95); border: 1px solid var(--brass-dim);
+    color: var(--cream); padding: 12px 20px; border-radius: 999px; font-size: 13.5px;
+    opacity: 0; pointer-events: none; transition: all 0.3s ease;
+    -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .slot, #overlay, #settings, #toast { transition-duration: 0.01ms !important; }
+    .slot.kb .fg { animation: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<div id="stage" aria-live="off">
+  <div class="slot" id="slotA"><img class="bg" alt="" /><img class="fg" alt="" /></div>
+  <div class="slot" id="slotB"><img class="bg" alt="" /><img class="fg" alt="" /></div>
+</div>
+
+<div id="overlay">
+  <div id="clock">--:--</div>
+  <div id="datecap">
+    <div id="date"></div>
+    <div id="caption"></div>
+  </div>
+</div>
+
+<div id="status">
+  <div>
+    <div class="mark">The Looking Glass<b>.</b></div>
+    <p id="statusMsg">A quiet frame for the photos you love. Open settings to point it at an album.</p>
+    <div class="cta"><button class="btn primary" style="width:auto;padding:13px 28px" id="statusOpen">Set up the frame</button></div>
+  </div>
+</div>
+
+<div id="gear" title="Settings" aria-label="Open settings">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+    <circle cx="12" cy="12" r="3"/>
+    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+  </svg>
+</div>
+
+<aside id="settings">
+  <div class="panel-head">
+    <h1>The Looking Glass<span>.</span></h1>
+    <button class="close" id="closeSettings" aria-label="Close">&times;</button>
+  </div>
+  <div class="panel-sub">Set it once here, then send the frame link to your Portal.</div>
+
+  <!-- SOURCE -->
+  <div class="group">
+    <div class="glabel">Where the photos come from</div>
+    <div class="field">
+      <div class="seg" id="sourceSeg">
+        <button data-src="icloud" class="on">iCloud album</button>
+        <button data-src="urls">Image links</button>
+      </div>
+    </div>
+
+    <div id="icloudFields">
+      <div class="field">
+        <label for="album">Shared album link</label>
+        <input type="text" id="album" placeholder="https://www.icloud.com/sharedalbum/#B0z..." />
+        <div class="hint">In Photos, make a shared album &rarr; turn on <b>Public Website</b> &rarr; copy that link. Paste the whole thing.</div>
+      </div>
+      <div class="field">
+        <label for="proxy">Proxy address</label>
+        <input type="url" id="proxy" placeholder="https://your-project.vercel.app/api/icloud" />
+        <div class="hint">The little helper you deployed. Needed once because Apple blocks direct browser access.</div>
+      </div>
+    </div>
+
+    <div id="urlFields" class="hide">
+      <div class="field">
+        <label for="urls">Direct image links, one per line</label>
+        <textarea id="urls" placeholder="https://example.com/beach.jpg&#10;https://example.com/hike.jpg"></textarea>
+        <div class="hint">Any publicly reachable .jpg / .png / .webp. Good for testing or a hand-picked set.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TIMING & MOTION -->
+  <div class="group">
+    <div class="glabel">Pace &amp; motion</div>
+    <div class="field">
+      <label>Change photo every <span class="range-val" id="intervalVal">8s</span></label>
+      <input type="range" id="interval" min="3" max="60" step="1" value="8" />
+    </div>
+    <div class="field">
+      <label for="transition">Transition</label>
+      <select id="transition">
+        <option value="kenburns">Ken Burns (slow drift)</option>
+        <option value="crossfade">Crossfade</option>
+        <option value="slide">Slide</option>
+        <option value="fadeblack">Fade through black</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Transition length <span class="range-val" id="speedVal">1.5s</span></label>
+      <input type="range" id="speed" min="0.3" max="4" step="0.1" value="1.5" />
+    </div>
+    <div class="field toggle-row">
+      <label for="shuffle">Shuffle order</label>
+      <span class="switch"><input type="checkbox" id="shuffle" checked /><span class="track"></span><span class="knob"></span></span>
+    </div>
+  </div>
+
+  <!-- FRAMING -->
+  <div class="group">
+    <div class="glabel">Framing</div>
+    <div class="field">
+      <label>How photos fit the screen</label>
+      <div class="seg" id="fitSeg">
+        <button data-fit="fit" class="on">Whole photo + blur</button>
+        <button data-fit="fill">Fill &amp; crop</button>
+      </div>
+      <div class="hint">Landscape frame, portrait photo? "Whole photo + blur" keeps every photo intact and fills the edges with a soft blurred version of itself.</div>
+    </div>
+    <div id="blurFields">
+      <div class="field">
+        <label>Background blur <span class="range-val" id="blurVal">40px</span></label>
+        <input type="range" id="blurAmount" min="8" max="80" step="2" value="40" />
+      </div>
+      <div class="field">
+        <label>Background dim <span class="range-val" id="dimVal">35%</span></label>
+        <input type="range" id="dim" min="0" max="80" step="5" value="35" />
+      </div>
+    </div>
+  </div>
+
+  <!-- OVERLAY -->
+  <div class="group">
+    <div class="glabel">On-screen text</div>
+    <div class="field toggle-row">
+      <label for="clockOn">Show clock</label>
+      <span class="switch"><input type="checkbox" id="clockOn" checked /><span class="track"></span><span class="knob"></span></span>
+    </div>
+    <div class="field toggle-row">
+      <label for="clock24">24-hour clock</label>
+      <span class="switch"><input type="checkbox" id="clock24" /><span class="track"></span><span class="knob"></span></span>
+    </div>
+    <div class="field toggle-row">
+      <label for="dateOn">Show date &amp; caption</label>
+      <span class="switch"><input type="checkbox" id="dateOn" /><span class="track"></span><span class="knob"></span></span>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button class="btn primary" id="saveBtn">Save &amp; copy frame link</button>
+    <button class="btn ghost" id="previewBtn">Preview now</button>
+  </div>
+</aside>
+
+<div id="toast"></div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---- tiny helpers ----
+  var $ = function (id) { return document.getElementById(id); };
+  var stage = $("stage");
+  var slots = [$("slotA"), $("slotB")];
+  var active = 0;              // index into slots that is currently shown
+  var photos = [];            // { url, width, height, caption, date }
+  var order = [];
+  var pos = 0;
+  var timer = null;
+  var running = false;
+
+  // localStorage, guarded (blocked in some sandboxes; that's fine)
+  var store = {
+    get: function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+    set: function (k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+  };
+
+  var DEFAULTS = {
+    source: "icloud", album: "", proxy: "", urls: [],
+    interval: 8, transition: "kenburns", speed: 1.5, shuffle: true,
+    fit: "fit", blurAmount: 40, dim: 35,
+    clockOn: true, clock24: false, dateOn: false
+  };
+
+  // ---- config load: URL hash wins, then localStorage, then defaults ----
+  function loadConfig() {
+    var cfg = null;
+    if (location.hash.indexOf("cfg=") !== -1) {
+      try {
+        var enc = location.hash.split("cfg=")[1];
+        cfg = JSON.parse(decodeURIComponent(escape(atob(enc.replace(/-/g, "+").replace(/_/g, "/")))));
+      } catch (e) { cfg = null; }
+    }
+    if (!cfg) {
+      var saved = store.get("looking-glass-config");
+      if (saved) { try { cfg = JSON.parse(saved); } catch (e) {} }
+    }
+    return assign({}, DEFAULTS, cfg || {});
+  }
+
+  function assign(t) {
+    for (var i = 1; i < arguments.length; i++) {
+      var s = arguments[i]; if (!s) continue;
+      for (var k in s) if (Object.prototype.hasOwnProperty.call(s, k)) t[k] = s[k];
+    }
+    return t;
+  }
+
+  function encodeConfig(cfg) {
+    var b64 = btoa(unescape(encodeURIComponent(JSON.stringify(cfg))));
+    return b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  }
+
+  var config = loadConfig();
+
+  // ---- apply config to the CSS + form ----
+  function applyCssVars() {
+    var r = document.documentElement.style;
+    r.setProperty("--interval", config.interval + "s");
+    r.setProperty("--speed", config.speed + "s");
+    r.setProperty("--blur", config.blurAmount + "px");
+    r.setProperty("--dim", (config.dim / 100).toString());
+    stage.className = config.fit === "fill" ? "fill" : "";
+  }
+
+  function fillForm() {
+    $("album").value = config.album || "";
+    $("proxy").value = config.proxy || "";
+    $("urls").value = (config.urls || []).join("\n");
+    $("interval").value = config.interval; $("intervalVal").textContent = config.interval + "s";
+    $("transition").value = config.transition;
+    $("speed").value = config.speed; $("speedVal").textContent = config.speed + "s";
+    $("shuffle").checked = !!config.shuffle;
+    $("blurAmount").value = config.blurAmount; $("blurVal").textContent = config.blurAmount + "px";
+    $("dim").value = config.dim; $("dimVal").textContent = config.dim + "%";
+    $("clockOn").checked = !!config.clockOn;
+    $("clock24").checked = !!config.clock24;
+    $("dateOn").checked = !!config.dateOn;
+    setSeg("sourceSeg", "src", config.source);
+    setSeg("fitSeg", "fit", config.fit);
+    toggleSourceFields();
+    $("blurFields").style.display = config.fit === "fill" ? "none" : "";
+  }
+
+  function setSeg(segId, attr, val) {
+    var btns = $(segId).querySelectorAll("button");
+    for (var i = 0; i < btns.length; i++) {
+      btns[i].classList.toggle("on", btns[i].getAttribute("data-" + attr) === val);
+    }
+  }
+
+  function toggleSourceFields() {
+    $("icloudFields").classList.toggle("hide", config.source !== "icloud");
+    $("urlFields").classList.toggle("hide", config.source !== "urls");
+  }
+
+  // ---- read the form back into config ----
+  function readForm() {
+    config.album = $("album").value.trim();
+    config.proxy = $("proxy").value.trim();
+    config.urls = $("urls").value.split("\n").map(function (s) { return s.trim(); }).filter(Boolean);
+    config.interval = parseInt($("interval").value, 10);
+    config.transition = $("transition").value;
+    config.speed = parseFloat($("speed").value);
+    config.shuffle = $("shuffle").checked;
+    config.blurAmount = parseInt($("blurAmount").value, 10);
+    config.dim = parseInt($("dim").value, 10);
+    config.clockOn = $("clockOn").checked;
+    config.clock24 = $("clock24").checked;
+    config.dateOn = $("dateOn").checked;
+  }
+
+  // ---- photo loading ----
+  function loadPhotos() {
+    if (config.source === "urls") {
+      photos = (config.urls || []).map(function (u) { return { url: u, width: 0, height: 0, caption: "", date: "" }; });
+      return Promise.resolve();
+    }
+    // iCloud via proxy
+    if (!config.proxy) return Promise.reject(new Error("Add your proxy address in settings so The Looking Glass can reach the album."));
+    if (!config.album) return Promise.reject(new Error("Paste your shared album link in settings."));
+    var token = config.album.indexOf("#") !== -1 ? config.album.split("#").pop() : config.album;
+    var base = config.proxy.replace(/\/+$/, "");
+    var url = base + (base.indexOf("?") !== -1 ? "&" : "?") + "token=" + encodeURIComponent(token);
+    return fetch(url).then(function (r) {
+      return r.json().then(function (data) {
+        if (!r.ok) throw new Error(data.error || "The proxy could not load the album.");
+        photos = data.photos || [];
+        if (!photos.length) throw new Error(data.note || "That album has no photos to show yet.");
+      });
+    });
+  }
+
+  function buildOrder() {
+    order = photos.map(function (_, i) { return i; });
+    if (config.shuffle) {
+      for (var i = order.length - 1; i > 0; i--) {
+        var j = Math.floor(Math.random() * (i + 1));
+        var t = order[i]; order[i] = order[j]; order[j] = t;
+      }
+    }
+    pos = 0;
+  }
+
+  // ---- the slideshow engine ----
+  function preload(url) { var im = new Image(); im.src = url; }
+
+  function showNext(first) {
+    if (!photos.length) return;
+    var photo = photos[order[pos]];
+    var nextSlot = slots[1 - active];
+    var curSlot = slots[active];
+    var bg = nextSlot.querySelector(".bg");
+    var fg = nextSlot.querySelector(".fg");
+
+    // reset transition classes
+    nextSlot.className = "slot";
+    nextSlot.style.transform = "";
+    curSlot.style.transform = "";
+
+    fg.onload = function () {
+      updateOverlay(photo);
+
+      var t = config.transition;
+      // entry starting state (no transition yet)
+      nextSlot.style.transition = "none";
+      if (t === "slide") {
+        nextSlot.style.transform = "translateX(100%)";
+        nextSlot.classList.add("active"); // slide keeps opacity up
+      } else {
+        nextSlot.style.opacity = ""; // start hidden via .slot default (opacity:0)
+      }
+      // force reflow so the browser registers the start state
+      void nextSlot.offsetWidth;
+      nextSlot.style.transition = "";
+
+      if (t === "fadeblack") {
+        // fade current out first, then bring next in through black
+        curSlot.classList.remove("active");
+        setTimeout(function () {
+          nextSlot.classList.add("active");
+        }, config.speed * 1000);
+      } else if (t === "slide") {
+        nextSlot.style.transform = "translateX(0)";
+        curSlot.style.transform = "translateX(-100%)";
+        curSlot.classList.remove("active");
+      } else {
+        if (t === "kenburns") nextSlot.classList.add("kb");
+        nextSlot.classList.add("active");
+        curSlot.classList.remove("active");
+      }
+
+      active = 1 - active;
+
+      // preload the following photo
+      var np = (pos + 1) % order.length;
+      preload(photos[order[np]].url);
+    };
+    fg.onerror = function () { advance(); }; // skip a broken image
+
+    bg.src = photo.url;
+    fg.src = photo.url;
+  }
+
+  function advance() {
+    pos = (pos + 1) % order.length;
+    if (pos === 0 && config.shuffle && order.length > 1) buildOrder();
+    showNext(false);
+  }
+
+  function start() {
+    running = true;
+    $("status").classList.remove("show");
+    clearInterval(timer);
+    showNext(true);
+    timer = setInterval(advance, config.interval * 1000);
+  }
+
+  function stop() { running = false; clearInterval(timer); }
+
+  function showStatus(msg) {
+    stop();
+    $("statusMsg").textContent = msg;
+    $("status").classList.add("show");
+  }
+
+  function run() {
+    applyCssVars();
+    loadPhotos().then(function () {
+      if (!photos.length) { showStatus("No photos found. Check the album or your links in settings."); return; }
+      buildOrder();
+      start();
+    }).catch(function (err) {
+      showStatus(err.message || "Something went wrong loading photos.");
+    });
+  }
+
+  // ---- overlay: clock, date, caption ----
+  function updateClock() {
+    if (!config.clockOn) { return; }
+    var d = new Date();
+    var h = d.getHours(), m = d.getMinutes();
+    var mm = (m < 10 ? "0" : "") + m;
+    if (config.clock24) {
+      $("clock").textContent = (h < 10 ? "0" : "") + h + ":" + mm;
+    } else {
+      var ap = h >= 12 ? "PM" : "AM";
+      var hh = h % 12; if (hh === 0) hh = 12;
+      $("clock").textContent = hh + ":" + mm + " " + ap;
+    }
+  }
+
+  function updateOverlay(photo) {
+    $("clock").style.display = config.clockOn ? "" : "none";
+    var showDate = config.dateOn;
+    $("datecap").style.display = showDate ? "" : "none";
+    if (showDate) {
+      var label = "";
+      if (photo && photo.date) {
+        var dt = new Date(photo.date);
+        if (!isNaN(dt.getTime())) {
+          label = dt.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" });
+        }
+      }
+      $("date").textContent = label;
+      $("caption").textContent = photo && photo.caption ? photo.caption : "";
+    }
+    $("overlay").classList.toggle("hidden", !config.clockOn && !showDate);
+  }
+  setInterval(updateClock, 1000); updateClock();
+
+  // ---- controls / settings UI ----
+  var gearTimer;
+  function flashChrome() {
+    $("gear").classList.add("show");
+    clearTimeout(gearTimer);
+    gearTimer = setTimeout(function () {
+      if (!$("settings").classList.contains("open")) $("gear").classList.remove("show");
+    }, 3500);
+  }
+  document.addEventListener("mousemove", flashChrome);
+  document.addEventListener("touchstart", flashChrome, { passive: true });
+
+  function openSettings() { fillForm(); $("settings").classList.add("open"); $("gear").classList.add("show"); stop(); }
+  function closeSettings() { $("settings").classList.remove("open"); }
+
+  $("gear").addEventListener("click", openSettings);
+  $("closeSettings").addEventListener("click", function () { closeSettings(); if (running || photos.length) start(); });
+  $("statusOpen").addEventListener("click", openSettings);
+
+  // segmented controls
+  $("sourceSeg").addEventListener("click", function (e) {
+    var b = e.target.closest("button"); if (!b) return;
+    config.source = b.getAttribute("data-src");
+    setSeg("sourceSeg", "src", config.source); toggleSourceFields();
+  });
+  $("fitSeg").addEventListener("click", function (e) {
+    var b = e.target.closest("button"); if (!b) return;
+    config.fit = b.getAttribute("data-fit");
+    setSeg("fitSeg", "fit", config.fit);
+    $("blurFields").style.display = config.fit === "fill" ? "none" : "";
+  });
+
+  // live range labels
+  $("interval").addEventListener("input", function () { $("intervalVal").textContent = this.value + "s"; });
+  $("speed").addEventListener("input", function () { $("speedVal").textContent = this.value + "s"; });
+  $("blurAmount").addEventListener("input", function () { $("blurVal").textContent = this.value + "px"; });
+  $("dim").addEventListener("input", function () { $("dimVal").textContent = this.value + "%"; });
+
+  function toast(msg) {
+    var t = $("toast"); t.textContent = msg; t.classList.add("show");
+    setTimeout(function () { t.classList.remove("show"); }, 2600);
+  }
+
+  $("previewBtn").addEventListener("click", function () {
+    readForm(); store.set("looking-glass-config", JSON.stringify(config));
+    closeSettings(); run();
+  });
+
+  $("saveBtn").addEventListener("click", function () {
+    readForm();
+    store.set("looking-glass-config", JSON.stringify(config));
+    var link = location.origin + location.pathname + "#cfg=" + encodeConfig(config);
+    location.hash = "cfg=" + encodeConfig(config);
+    var done = function () { toast("Frame link copied. Open it on your Portal."); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(link).then(done, function () { toast("Saved. Copy the address bar link for your Portal."); });
+    } else { toast("Saved. Copy the address bar link for your Portal."); }
+    closeSettings(); run();
+  });
+
+  // keyboard: space pauses, arrows step, S opens settings
+  document.addEventListener("keydown", function (e) {
+    if ($("settings").classList.contains("open")) return;
+    if (e.key === " ") { e.preventDefault(); running ? stop() : start(); }
+    else if (e.key === "ArrowRight") { advance(); }
+    else if (e.key === "ArrowLeft") { pos = (pos - 1 + order.length) % order.length; showNext(false); }
+    else if (e.key.toLowerCase() === "s") { openSettings(); }
+  });
+
+  // ---- boot ----
+  var hasSource = (config.source === "urls" && config.urls.length) ||
+                  (config.source === "icloud" && config.proxy && config.album);
+  fillForm();
+  if (hasSource) { run(); }
+  else { showStatus("A quiet frame for the photos you love. Open settings to point it at an album."); $("gear").classList.add("show"); }
+})();
+</script>
+</body>
+</html>
