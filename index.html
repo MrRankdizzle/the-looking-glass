@@ -174,6 +174,21 @@
   #fsToggle:hover { background: rgba(30,25,18,0.8); }
   #fsToggle svg { width: 22px; height: 22px; }
 
+  .navbtn {
+    position: fixed; top: 50%; transform: translateY(-50%); z-index: 40;
+    width: 52px; height: 52px; border-radius: 50%;
+    display: grid; place-items: center; cursor: pointer;
+    background: rgba(20,17,13,0.5); border: 1px solid var(--line);
+    color: var(--cream); opacity: 0; pointer-events: none;
+    transition: opacity 0.4s ease, background 0.2s ease;
+    -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+  }
+  .navbtn.show { opacity: 1; pointer-events: auto; }
+  .navbtn:hover { background: rgba(30,25,18,0.8); color: var(--brass); }
+  .navbtn svg { width: 26px; height: 26px; }
+  #navPrev { left: 16px; }
+  #navNext { right: 16px; }
+
   #settings {
     position: fixed; top: 0; right: 0; bottom: 0; z-index: 50;
     width: min(440px, 100%);
@@ -325,6 +340,13 @@
     <circle cx="12" cy="12" r="3"/>
     <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
   </svg>
+</div>
+
+<div id="navPrev" class="navbtn" title="Previous" aria-label="Previous photo">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>
+</div>
+<div id="navNext" class="navbtn" title="Next" aria-label="Next photo">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg>
 </div>
 
 <aside id="settings">
@@ -902,6 +924,10 @@
   }
   function stop() { running = false; clearInterval(timer); }
 
+  function resetTimer() { if (running) { clearInterval(timer); timer = setInterval(advance, config.interval * 1000); } }
+  function goNext() { if (photos.length < 2) return; advance(); resetTimer(); }
+  function goPrev() { if (photos.length < 2) return; pos = (pos - 1 + order.length) % order.length; showNext(false); resetTimer(); }
+
   function showStatus(msg) {
     stop();
     $("statusMsg").textContent = msg;
@@ -1061,14 +1087,20 @@
   // ---- controls / settings ----
   var gearTimer;
   function flashChrome() {
+    var open = $("settings").classList.contains("open");
     $("gear").classList.add("show");
     $("fsToggle").classList.add("show");
+    var showNav = !open && photos.length > 1;
+    $("navPrev").classList.toggle("show", showNav);
+    $("navNext").classList.toggle("show", showNav);
     clearTimeout(gearTimer);
     gearTimer = setTimeout(function () {
       if (!$("settings").classList.contains("open")) {
         $("gear").classList.remove("show");
         $("fsToggle").classList.remove("show");
       }
+      $("navPrev").classList.remove("show");
+      $("navNext").classList.remove("show");
     }, 3500);
   }
   document.addEventListener("mousemove", flashChrome);
@@ -1105,6 +1137,24 @@
     } else { enterFullscreen(); }
   }
   $("fsToggle").addEventListener("click", toggleFullscreen);
+  $("navPrev").addEventListener("click", goPrev);
+  $("navNext").addEventListener("click", goNext);
+
+  // Swipe left/right on the photo to move between photos.
+  var sx = 0, sy = 0, sTracking = false;
+  document.addEventListener("touchstart", function (e) {
+    if (e.touches.length !== 1 || $("settings").classList.contains("open")) { sTracking = false; return; }
+    if (e.target.closest && e.target.closest("#settings, #gear, #fsToggle, #navPrev, #navNext")) { sTracking = false; return; }
+    sTracking = true; sx = e.touches[0].clientX; sy = e.touches[0].clientY;
+  }, { passive: true });
+  document.addEventListener("touchend", function (e) {
+    if (!sTracking) return; sTracking = false;
+    var t = e.changedTouches[0]; if (!t) return;
+    var dx = t.clientX - sx, dy = t.clientY - sy;
+    if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.3) {
+      if (dx < 0) goNext(); else goPrev();
+    }
+  }, { passive: true });
 
   function openSettings() { fillForm(); $("settings").classList.add("open"); $("gear").classList.add("show"); stop(); }
   function closeSettings() { $("settings").classList.remove("open"); }
@@ -1230,8 +1280,8 @@
   document.addEventListener("keydown", function (e) {
     if ($("settings").classList.contains("open")) return;
     if (e.key === " ") { e.preventDefault(); running ? stop() : start(); }
-    else if (e.key === "ArrowRight") { advance(); }
-    else if (e.key === "ArrowLeft") { pos = (pos - 1 + order.length) % order.length; showNext(false); }
+    else if (e.key === "ArrowRight") { goNext(); }
+    else if (e.key === "ArrowLeft") { goPrev(); }
     else if (e.key.toLowerCase() === "s") { openSettings(); }
     else if (e.key.toLowerCase() === "f") { toggleFullscreen(); }
   });
