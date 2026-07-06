@@ -589,6 +589,8 @@
   var timer = null;
   var running = false;
   var weatherTimer = null;
+  var albumTimer = null;
+  var failStreak = 0;
   var locCandidates = [];
   var geoResolvedFor = null;
 
@@ -819,7 +821,7 @@
   }
 
   // ---- photos ----
-  function loadPhotos() {
+  function loadPhotos(bustCache) {
     if (config.source === "urls") {
       photos = (config.urls || []).map(function (u) { return { url: u, width: 0, height: 0, caption: "", date: "" }; });
       return Promise.resolve();
@@ -829,6 +831,7 @@
     var token = config.album.indexOf("#") !== -1 ? config.album.split("#").pop() : config.album;
     var base = config.proxy.replace(/\/+$/, "");
     var url = base + (base.indexOf("?") !== -1 ? "&" : "?") + "token=" + encodeURIComponent(token);
+    if (bustCache) url += "&t=" + Date.now();
     return fetch(url).then(function (r) {
       return r.json().then(function (data) {
         if (!r.ok) throw new Error(data.error || "The proxy could not load the album.");
@@ -869,6 +872,7 @@
     curSlot.style.transform = "";
 
     fg.onload = function () {
+      failStreak = 0;
       updateOverlay(photo);
       var t = config.transition;
 
@@ -903,7 +907,11 @@
       var np = (pos + 1) % order.length;
       preload(photos[order[np]].url);
     };
-    fg.onerror = function () { advance(); };
+    fg.onerror = function () {
+      failStreak++;
+      if (failStreak >= 5) { failStreak = 0; refreshAlbum(true); }
+      else advance();
+    };
 
     bg.src = photo.url;
     fg.src = photo.url;
@@ -934,10 +942,24 @@
     $("status").classList.add("show");
   }
 
+  function refreshAlbum(thenShow) {
+    if (config.source !== "icloud") { if (thenShow) advance(); return; }
+    var prevPos = pos;
+    loadPhotos(true).then(function () {
+      if (!photos.length) return;
+      buildOrder();               // sets pos = 0
+      failStreak = 0;
+      if (!thenShow && config.order !== "shuffle") pos = Math.min(prevPos, order.length - 1);
+      if (thenShow) showNext(false);
+    }).catch(function () { /* keep showing what we already have */ });
+  }
+
   function run() {
     applyCssVars();
     applyNight();
     startWeather();
+    clearInterval(albumTimer);
+    if (config.source === "icloud") albumTimer = setInterval(function () { refreshAlbum(false); }, 15 * 60 * 1000);
     loadPhotos().then(function () {
       if (!photos.length) { showStatus("No photos found. Check the album or your links in settings."); return; }
       buildOrder();
@@ -1046,7 +1068,7 @@
     var unit = config.weatherUnit === "C" ? "celsius" : "fahrenheit";
     var url = "https://api.open-meteo.com/v1/forecast?latitude=" + config.weatherLat +
               "&longitude=" + config.weatherLon +
-              "&current=temperature_2m,weather_code,is_day&temperature_unit=" + unit + "&timezone=auto";
+              "&current=temperature_2m,weather_code,is_day&temperature_unit=" + unit + "&timezone=auto&_=" + Date.now();
     fetch(url).then(function (r) { return r.json(); }).then(function (d) {
       if (!d.current || typeof d.current.temperature_2m === "undefined") return;
       var m = wmoToIcon(d.current.weather_code, d.current.is_day);
